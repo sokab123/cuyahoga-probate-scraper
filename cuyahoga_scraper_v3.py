@@ -267,6 +267,18 @@ def main():
     print("🏛️  Cuyahoga County Probate Lead Scraper v3")
     print(f"⏰ Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
     
+    # Check if this is first run or daily run
+    # Use environment variable or check for existence of a flag file
+    first_run = os.getenv('FIRST_RUN', 'false').lower() == 'true'
+    flag_file = 'first_run_complete.flag'
+    
+    if first_run or not os.path.exists(flag_file):
+        days_back = 14
+        print("📅 FIRST RUN: Pulling 14 days of historical data\n")
+    else:
+        days_back = 1
+        print("📅 DAILY RUN: Pulling yesterday's records only\n")
+    
     all_records = []
     
     with sync_playwright() as p:
@@ -279,11 +291,17 @@ def main():
         
         # Scrape each document type
         for doc_type in DOCUMENT_TYPES:
-            records = scrape_document_type(page, doc_type, days_back=14)  # Last 14 days
+            records = scrape_document_type(page, doc_type, days_back=days_back)
             all_records.extend(records)
             time.sleep(3)  # Be polite between searches
         
         browser.close()
+    
+    # Mark first run as complete
+    if not os.path.exists(flag_file):
+        with open(flag_file, 'w') as f:
+            f.write(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+        print(f"\n✅ First run complete. Future runs will only pull 1 day of data.")
     
     print(f"\n📊 Total records found: {len(all_records)}")
     
