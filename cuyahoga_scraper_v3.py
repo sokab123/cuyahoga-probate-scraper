@@ -7,6 +7,7 @@ Correctly maps table columns and extracts parcel numbers
 from playwright.sync_api import sync_playwright
 import csv
 import json
+import os
 from datetime import datetime, timedelta
 from collections import defaultdict
 import time
