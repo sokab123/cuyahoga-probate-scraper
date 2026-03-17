@@ -320,6 +320,14 @@ def main():
     
     print(f"\n✅ Scrape complete!")
     
+    # Upload to Google Sheets if credentials are available
+    print("\n📤 Uploading to Google Sheets...")
+    try:
+        from google_sheets_uploader import upload_to_sheets
+        upload_to_sheets(filename)
+    except Exception as e:
+        print(f"⚠️  Google Sheets upload skipped: {e}")
+    
     # Show top 10 hot leads
     if hot_leads:
         print("\n🔥 Top HOT Leads (2+ documents):")
