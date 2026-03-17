@@ -1,0 +1,11 @@
+[phases.setup]
+nixPkgs = ["python310", "chromium"]
+
+[phases.install]
+cmds = [
+  "pip install -r requirements.txt",
+  "playwright install chromium"
+]
+
+[start]
+cmd = "python cuyahoga_scraper_v3.py"
