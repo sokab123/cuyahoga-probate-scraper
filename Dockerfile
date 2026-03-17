@@ -38,5 +38,5 @@ RUN playwright install chromium
 # Copy application code
 COPY . .
 
-# Run the scraper
-CMD ["python", "cuyahoga_scraper_v3.py"]
+# Run the cron wrapper (keeps container alive)
+CMD ["python", "run_cron.py"]
