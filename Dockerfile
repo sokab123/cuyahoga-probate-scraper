@@ -1,5 +1,5 @@
-# Use Playwright's official Docker image with Python
-FROM mcr.microsoft.com/playwright/python:v1.45.0-jammy
+# Use Playwright's official Docker image with Python (match requirements.txt version)
+FROM mcr.microsoft.com/playwright/python:v1.58.0-jammy
 
 # Set working directory
 WORKDIR /app
