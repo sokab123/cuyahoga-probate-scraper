@@ -1,0 +1,5 @@
+[build]
+
+[deploy]
+startCommand = "python cuyahoga_scraper_v3.py"
+restartPolicyType = "never"
