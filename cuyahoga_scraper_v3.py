@@ -338,13 +338,31 @@ def main():
     
     print(f"\n✅ Scrape complete!")
     
-    # Upload to Google Sheets if credentials are available
-    print("\n📤 Uploading to Google Sheets...")
+    # Process with smart deduplication and upload to Google Sheets
+    print("\n📤 Processing leads and updating Google Sheets...")
     try:
-        from google_sheets_uploader import upload_to_sheets
-        upload_to_sheets(filename)
+        from smart_deduplication import process_daily_leads, send_email_alert, get_sheets_client
+        
+        client = get_sheets_client()
+        new_leads, updated_leads, hot_alerts = process_daily_leads(filename, client)
+        
+        print(f"\n📊 Processing Results:")
+        print(f"  🆕 New leads: {len(new_leads)}")
+        print(f"  🔄 Updated leads: {len(updated_leads)}")
+        print(f"  🔥 Hot alerts: {len(hot_alerts)}")
+        
+        # Send email alert if there's activity
+        if hot_alerts or updated_leads:
+            send_email_alert(new_leads, updated_leads, hot_alerts)
+            
     except Exception as e:
-        print(f"⚠️  Google Sheets upload skipped: {e}")
+        print(f"⚠️  Smart processing failed: {e}")
+        print("Falling back to simple upload...")
+        try:
+            from google_sheets_uploader import upload_to_sheets
+            upload_to_sheets(filename)
+        except Exception as e2:
+            print(f"⚠️  Google Sheets upload also failed: {e2}")
     
     # Show top 10 hot leads
     if hot_leads:
