@@ -48,13 +48,13 @@ def main():
     schedule.every().day.at("09:00").do(run_scraper)
     
     print("✅ Cron scheduler initialized")
-    print("⏳ Waiting for first scheduled run...\n")
     
-    # Run immediately on startup if FIRST_RUN is true
+    # Always run immediately on startup
     import os
-    if os.getenv('RUN_ON_STARTUP', 'false').lower() == 'true':
-        print("🚀 RUN_ON_STARTUP=true, running scraper immediately...\n")
-        run_scraper()
+    print("🚀 Running scraper immediately on startup...\n")
+    run_scraper()
+    
+    print("\n⏳ Waiting for next scheduled run...\n")
     
     # Keep the service alive
     while True:
