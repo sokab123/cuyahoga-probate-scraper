@@ -1,0 +1,20 @@
+services:
+  - type: cron
+    name: cuyahoga-probate-scraper
+    env: docker
+    schedule: "0 9 * * *"  # Daily at 9 AM UTC (5 AM EST)
+    dockerfilePath: ./Dockerfile
+    dockerCommand: python3 -u cuyahoga_scraper_v3.py
+    envVars:
+      - key: GOOGLE_CREDENTIALS
+        sync: false
+      - key: OWNER_EMAIL
+        sync: false
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: 587
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false

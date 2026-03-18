@@ -26,5 +26,5 @@ RUN playwright install --with-deps chromium
 # Copy application code
 COPY . .
 
-# Run health check server (allows manual triggering via HTTP)
-CMD ["python3", "-u", "healthcheck_server.py"]
+# Run the scraper (Render's cron will handle scheduling)
+CMD ["python3", "-u", "cuyahoga_scraper_v3.py"]
