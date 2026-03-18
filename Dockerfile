@@ -12,8 +12,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Verify Playwright installation
-RUN playwright install chromium
+# Don't run playwright install - browsers are already in the base image!
 
 # Run the scraper directly (Railway's cron will handle scheduling)
 CMD ["python", "-u", "cuyahoga_scraper_v3.py"]
