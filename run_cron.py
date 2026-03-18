@@ -18,9 +18,9 @@ def run_scraper():
     print(f"{'='*60}\n")
     
     try:
-        # Run the scraper
+        # Run the scraper (v4 with pagination fix)
         result = subprocess.run(
-            ['python', 'cuyahoga_scraper_v3.py'],
+            ['python', 'cuyahoga_scraper_v4.py'],
             capture_output=False,
             text=True
         )
@@ -69,4 +69,3 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n\n⏹️  Cron service stopped")
         sys.exit(0)
-s.exit(0)
