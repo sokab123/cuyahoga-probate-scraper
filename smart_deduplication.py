@@ -222,11 +222,11 @@ def process_daily_leads(daily_leads_file, client):
             })
         
         else:
-            # COMPLETELY NEW PARCEL AND GRANTOR
+            # COMPLETELY NEW PARCEL AND GRANTOR (or no parcel but has grantor)
             new_row = [
                 lead['lead_score'],
                 lead['document_count'],
-                parcel,
+                parcel if parcel else 'NO PARCEL',  # Mark missing parcels
                 lead['property_address'],
                 lead['grantors'],
                 lead['grantees'],
