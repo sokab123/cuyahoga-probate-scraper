@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """
-Smart deduplication and parcel tracking system (BATCHED VERSION)
+Smart deduplication and parcel tracking system
 Compares daily scrapes against master sheet, tracks repeat activity, sends alerts
-
-OPTIMIZED: Uses batch_update to avoid Google Sheets API quota errors
 """
 
 import gspread
@@ -81,17 +79,17 @@ def load_master_sheet(client, sheet_name="Cuyahoga Probate Leads"):
         ]
         master_sheet.append_row(headers)
         
-        return spreadsheet, master_sheet, {}, {}
+        return spreadsheet, master_sheet, {}
 
 def process_daily_leads(daily_leads_file, client):
     """
-    Process daily leads against master sheet (BATCHED VERSION)
+    Process daily leads against master sheet
     Returns: new_leads, updated_leads, hot_alerts
     """
     import csv
     
     # Load master data
-    spreadsheet, master_sheet, parcel_index, grantor_index = load_master_sheet(client)
+    spreadsheet, master_sheet, parcel_index = load_master_sheet(client)
     
     # Read daily leads
     with open(daily_leads_file, 'r', encoding='utf-8') as f:
@@ -102,10 +100,6 @@ def process_daily_leads(daily_leads_file, client):
     updated_leads = []
     hot_alerts = []
     
-    # Batch update storage
-    updates_to_apply = []  # {range, values}
-    rows_to_append = []     # New rows to add
-    
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     
     for lead in daily_leads:
@@ -113,7 +107,6 @@ def process_daily_leads(daily_leads_file, client):
         if not parcel:
             continue
         
-        # Check if parcel exists
         if parcel in parcel_index:
             # EXISTING PARCEL - Check if new documents added
             existing = parcel_index[parcel]['record']
@@ -128,7 +121,7 @@ def process_daily_leads(daily_leads_file, client):
             added_types = new_types - existing_types
             
             if added_types or new_count > existing_count:
-                # UPDATE EXISTING ROW (batched)
+                # UPDATE EXISTING ROW
                 row_num = parcel_index[parcel]['row']
                 
                 # Merge document data
@@ -151,7 +144,7 @@ def process_daily_leads(daily_leads_file, client):
                 # Determine new lead score
                 new_score = "HOT" if total_count >= 2 else "WARM"
                 
-                # Prepare update
+                # Update row
                 updated_row = [
                     new_score,
                     total_count,
@@ -167,10 +160,7 @@ def process_daily_leads(daily_leads_file, client):
                     activity_count
                 ]
                 
-                updates_to_apply.append({
-                    'range': f'A{row_num}:L{row_num}',
-                    'values': [updated_row]
-                })
+                master_sheet.update(f'A{row_num}:L{row_num}', [updated_row])
                 
                 updated_leads.append({
                     'parcel': parcel,
@@ -191,79 +181,65 @@ def process_daily_leads(daily_leads_file, client):
                         'document_types': '; '.join(sorted(all_types)),
                         'activity_count': activity_count
                     })
+        
+        elif matched_by_grantor:
+            # SAME GRANTOR, DIFFERENT PARCEL - Flag as related activity
+            matching_grantors = [g for g in grantors_in_lead if g in grantor_index]
+            related_parcels = []
+            
+            for grantor in matching_grantors:
+                for match in grantor_index[grantor]:
+                    related_parcels.append(match['record'].get('parcel_number'))
+            
+            # Add as new row but flag the relationship
+            new_row = [
+                "HOT",  # Auto-HOT because related to existing grantor
+                lead['document_count'],
+                parcel,
+                lead['property_address'],
+                lead['grantors'],
+                lead['grantees'],
+                lead['document_types'],
+                lead['recorded_dates'],
+                lead['document_numbers'],
+                timestamp,  # first_seen
+                timestamp,  # last_updated
+                1  # activity_count
+            ]
+            
+            master_sheet.append_row(new_row)
+            new_leads.append(lead)
+            
+            # HOT ALERT for related grantor activity
+            hot_alerts.append({
+                'parcel': parcel,
+                'address': lead['property_address'],
+                'document_count': int(lead['document_count']),
+                'document_types': lead['document_types'],
+                'activity_count': 1,
+                'related_grantors': matching_grantors,
+                'related_parcels': related_parcels
+            })
+        
         else:
-            # Check if grantor exists (related activity)
-            grantors_in_lead = [g.strip() for g in lead['grantors'].split('; ') if g.strip()]
-            matched_by_grantor = any(g in grantor_index for g in grantors_in_lead)
+            # COMPLETELY NEW PARCEL AND GRANTOR (or no parcel but has grantor)
+            new_row = [
+                lead['lead_score'],
+                lead['document_count'],
+                parcel if parcel else 'NO PARCEL',  # Mark missing parcels
+                lead['property_address'],
+                lead['grantors'],
+                lead['grantees'],
+                lead['document_types'],
+                lead['recorded_dates'],
+                lead['document_numbers'],
+                timestamp,  # first_seen
+                timestamp,  # last_updated
+                1  # activity_count
+            ]
             
-            if matched_by_grantor:
-                # SAME GRANTOR, DIFFERENT PARCEL - Flag as related activity
-                matching_grantors = [g for g in grantors_in_lead if g in grantor_index]
-                related_parcels = []
-                
-                for grantor in matching_grantors:
-                    for match in grantor_index[grantor]:
-                        related_parcels.append(match['record'].get('parcel_number'))
-                
-                # Add as new row but flag the relationship
-                new_row = [
-                    "HOT",  # Auto-HOT because related to existing grantor
-                    lead['document_count'],
-                    parcel,
-                    lead['property_address'],
-                    lead['grantors'],
-                    lead['grantees'],
-                    lead['document_types'],
-                    lead['recorded_dates'],
-                    lead['document_numbers'],
-                    timestamp,  # first_seen
-                    timestamp,  # last_updated
-                    1  # activity_count
-                ]
-                
-                rows_to_append.append(new_row)
-                new_leads.append(lead)
-                
-                # HOT ALERT for related grantor activity
-                hot_alerts.append({
-                    'parcel': parcel,
-                    'address': lead['property_address'],
-                    'document_count': int(lead['document_count']),
-                    'document_types': lead['document_types'],
-                    'activity_count': 1,
-                    'related_grantors': matching_grantors,
-                    'related_parcels': related_parcels
-                })
-            
-            else:
-                # COMPLETELY NEW PARCEL AND GRANTOR
-                new_row = [
-                    lead['lead_score'],
-                    lead['document_count'],
-                    parcel if parcel else 'NO PARCEL',
-                    lead['property_address'],
-                    lead['grantors'],
-                    lead['grantees'],
-                    lead['document_types'],
-                    lead['recorded_dates'],
-                    lead['document_numbers'],
-                    timestamp,  # first_seen
-                    timestamp,  # last_updated
-                    1  # activity_count
-                ]
-                
-                rows_to_append.append(new_row)
-                new_leads.append(lead)
-    
-    # ✅ APPLY ALL UPDATES IN ONE BATCH
-    if updates_to_apply:
-        print(f"  📝 Batching {len(updates_to_apply)} updates...")
-        master_sheet.batch_update(updates_to_apply)
-    
-    # ✅ APPEND ALL NEW ROWS IN ONE BATCH
-    if rows_to_append:
-        print(f"  ➕ Batching {len(rows_to_append)} new rows...")
-        master_sheet.append_rows(rows_to_append)
+            master_sheet.append_row(new_row)
+            new_leads.append(lead)
     
     # Update Hot Alerts sheet
     update_hot_alerts_sheet(spreadsheet, hot_alerts, updated_leads)
@@ -271,7 +247,7 @@ def process_daily_leads(daily_leads_file, client):
     return new_leads, updated_leads, hot_alerts
 
 def update_hot_alerts_sheet(spreadsheet, hot_alerts, updated_leads):
-    """Update the Hot Alerts tab with latest activity (BATCHED)"""
+    """Update the Hot Alerts tab with latest activity"""
     try:
         hot_sheet = spreadsheet.worksheet("Hot Alerts")
         # Clear existing data (keep headers)
@@ -286,7 +262,7 @@ def update_hot_alerts_sheet(spreadsheet, hot_alerts, updated_leads):
     ]
     hot_sheet.update('A1:G1', [headers])
     
-    # Prepare all rows to add
+    # Add hot alerts
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
     rows = []
     
@@ -301,87 +277,129 @@ def update_hot_alerts_sheet(spreadsheet, hot_alerts, updated_leads):
             'NEW ACTIVITY' if alert['activity_count'] > 1 else 'NEW HOT LEAD'
         ])
     
-    # ✅ BATCH APPEND ALL ROWS AT ONCE
     if rows:
-        hot_sheet.append_rows(rows[:100])  # Limit to top 100 alerts
-    
-    print(f"  🔥 Hot Alerts: {len(rows)} total")
+        hot_sheet.append_rows(rows)
+        print(f"🔥 Added {len(rows)} hot alerts to Hot Alerts tab")
 
 def send_email_alert(new_leads, updated_leads, hot_alerts):
-    """Send email summary of hot activity"""
+    """Send email summary of daily activity"""
     
-    if not hot_alerts and not updated_leads:
-        print("  ✉️  No hot alerts to send")
+    recipient = os.getenv('OWNER_EMAIL')
+    if not recipient:
+        print("⚠️  OWNER_EMAIL not set, skipping email")
         return
     
-    # Email config from environment
-    smtp_server = os.getenv('SMTP_SERVER', 'smtp.gmail.com')
-    smtp_port = int(os.getenv('SMTP_PORT', 587))
-    smtp_user = os.getenv('SMTP_USER')
-    smtp_pass = os.getenv('SMTP_PASS')
-    owner_email = os.getenv('OWNER_EMAIL')
+    # Build email content
+    subject = f"Cuyahoga Probate Leads - {len(hot_alerts)} Hot Alerts, {len(updated_leads)} Updates"
     
-    if not all([smtp_user, smtp_pass, owner_email]):
-        print("  ⚠️  Email credentials not configured (optional)")
-        return
-    
-    # Build email
-    subject = f"🔥 Cuyahoga Probate Alert: {len(hot_alerts)} Hot Leads"
-    
-    html_body = f"""
+    html_content = f"""
     <html>
-    <body>
-        <h2>Probate Lead Alert - {datetime.now().strftime('%Y-%m-%d')}</h2>
+    <body style="font-family: Arial, sans-serif;">
+        <h2>🏛️ Cuyahoga Probate Daily Report</h2>
+        <p><strong>Date:</strong> {datetime.now().strftime('%Y-%m-%d %I:%M %p')}</p>
+        
+        <hr>
         
         <h3>🔥 Hot Alerts ({len(hot_alerts)})</h3>
+        <p>Parcels with 2+ documents or new activity on existing hot leads:</p>
         <table border="1" cellpadding="5" style="border-collapse: collapse;">
-            <tr>
+            <tr style="background-color: #f0f0f0;">
                 <th>Parcel</th>
                 <th>Address</th>
-                <th>Doc Count</th>
-                <th>Activity</th>
+                <th>Docs</th>
+                <th>Activity Count</th>
                 <th>Types</th>
             </tr>
     """
     
     for alert in hot_alerts[:20]:  # Top 20
-        html_body += f"""
+        html_content += f"""
             <tr>
                 <td>{alert['parcel']}</td>
-                <td>{alert['address']}</td>
+                <td>{alert['address'][:50]}</td>
                 <td>{alert['document_count']}</td>
                 <td>{alert['activity_count']}</td>
-                <td>{alert['document_types']}</td>
+                <td>{alert['document_types'][:60]}</td>
             </tr>
         """
     
-    html_body += """
+    html_content += f"""
         </table>
         
-        <p><strong>New leads:</strong> {}</p>
-        <p><strong>Updated leads:</strong> {}</p>
+        <hr>
         
-        <p>View full details in your <a href="https://docs.google.com/spreadsheets">Google Sheet</a></p>
+        <h3>📊 Summary</h3>
+        <ul>
+            <li><strong>New Leads:</strong> {len(new_leads)}</li>
+            <li><strong>Updated Leads:</strong> {len(updated_leads)}</li>
+            <li><strong>Hot Alerts:</strong> {len(hot_alerts)}</li>
+        </ul>
+        
+        <p><a href="https://sheets.google.com">View Full Sheet</a></p>
+        
+        <hr>
+        <p style="color: #888; font-size: 12px;">
+            Automated by Cuyahoga Probate Scraper<br>
+            To stop receiving these emails, remove OWNER_EMAIL from Railway variables
+        </p>
     </body>
     </html>
-    """.format(len([l for l in new_leads if l.get('lead_score') == 'HOT']), len(updated_leads))
+    """
     
-    # Send email
+    # Send email using SMTP
+    smtp_host = os.getenv('SMTP_HOST', 'smtp.gmail.com')
+    smtp_port = int(os.getenv('SMTP_PORT', '587'))
+    smtp_user = os.getenv('SMTP_USER')
+    smtp_pass = os.getenv('SMTP_PASS')
+    
+    if not smtp_user or not smtp_pass:
+        print("⚠️  SMTP credentials not set, skipping email")
+        print("   Set SMTP_USER and SMTP_PASS in Railway variables")
+        return
+    
     try:
         msg = MIMEMultipart('alternative')
         msg['Subject'] = subject
         msg['From'] = smtp_user
-        msg['To'] = owner_email
+        msg['To'] = recipient
         
-        msg.attach(MIMEText(html_body, 'html'))
+        html_part = MIMEText(html_content, 'html')
+        msg.attach(html_part)
         
-        server = smtplib.SMTP(smtp_server, smtp_port)
-        server.starttls()
-        server.login(smtp_user, smtp_pass)
-        server.send_message(msg)
-        server.quit()
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_pass)
+            server.send_message(msg)
         
-        print(f"  ✉️  Email sent to {owner_email}")
-    
+        print(f"✉️  Email sent to {recipient}")
+        
     except Exception as e:
-        print(f"  ⚠️  Email failed: {e}")
+        print(f"❌ Error sending email: {e}")
+
+def main():
+    """Test the deduplication system"""
+    import glob
+    
+    client = get_sheets_client()
+    
+    # Find latest CSV
+    csv_files = glob.glob("cuyahoga_leads_*.csv")
+    if not csv_files:
+        print("❌ No CSV files found")
+        return
+    
+    latest_csv = max(csv_files, key=os.path.getctime)
+    print(f"📁 Processing: {latest_csv}")
+    
+    new_leads, updated_leads, hot_alerts = process_daily_leads(latest_csv, client)
+    
+    print(f"\n📊 Results:")
+    print(f"  🆕 New leads: {len(new_leads)}")
+    print(f"  🔄 Updated leads: {len(updated_leads)}")
+    print(f"  🔥 Hot alerts: {len(hot_alerts)}")
+    
+    if hot_alerts or updated_leads:
+        send_email_alert(new_leads, updated_leads, hot_alerts)
+
+if __name__ == "__main__":
+    main()
