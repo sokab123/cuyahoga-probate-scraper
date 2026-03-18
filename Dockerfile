@@ -15,5 +15,5 @@ COPY . .
 # Verify Playwright installation
 RUN playwright install chromium
 
-# Run the cron wrapper (keeps container alive)
-CMD ["python", "-u", "run_cron.py"]
+# Run the scraper directly (Railway's cron will handle scheduling)
+CMD ["python", "-u", "cuyahoga_scraper_v3.py"]
