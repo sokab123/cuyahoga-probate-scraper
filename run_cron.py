@@ -39,10 +39,12 @@ def run_scraper():
 
 def main():
     """Main cron loop"""
-    print("🏛️  Cuyahoga Probate Scraper - Cron Service")
-    print(f"⏰ Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"📅 Schedule: Daily at 9:00 AM UTC (5:00 AM EST)")
-    print(f"{'='*60}\n")
+    print("🏛️  Cuyahoga Probate Scraper - Cron Service", flush=True)
+    print(f"⏰ Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", flush=True)
+    print(f"📅 Schedule: Daily at 9:00 AM UTC (5:00 AM EST)", flush=True)
+    print(f"{'='*60}\n", flush=True)
+    sys.stdout.flush()
+    sys.stderr.flush()
     
     # Schedule the job
     schedule.every().day.at("09:00").do(run_scraper)
@@ -67,3 +69,4 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n\n⏹️  Cron service stopped")
         sys.exit(0)
+s.exit(0)
