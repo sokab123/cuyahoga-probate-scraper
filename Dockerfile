@@ -16,4 +16,4 @@ COPY . .
 RUN playwright install chromium
 
 # Run the cron wrapper (keeps container alive)
-CMD ["python", "run_cron.py"]
+CMD ["python", "-u", "run_cron.py"]
