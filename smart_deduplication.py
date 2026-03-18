@@ -37,17 +37,34 @@ def load_master_sheet(client, sheet_name="Cuyahoga Probate Leads"):
         # Get all records
         records = master_sheet.get_all_records()
         
-        # Index by parcel number for fast lookup
+        # Index by parcel number AND grantor for fast lookup
         parcel_index = {}
+        grantor_index = {}
+        
         for idx, record in enumerate(records, start=2):  # Start at row 2 (after header)
             parcel = record.get('parcel_number', '').strip()
+            grantors = record.get('grantors', '').strip()
+            
+            # Index by parcel
             if parcel:
                 parcel_index[parcel] = {
                     'row': idx,
                     'record': record
                 }
+            
+            # Index by grantor(s)
+            if grantors:
+                for grantor in grantors.split('; '):
+                    grantor = grantor.strip()
+                    if grantor:
+                        if grantor not in grantor_index:
+                            grantor_index[grantor] = []
+                        grantor_index[grantor].append({
+                            'row': idx,
+                            'record': record
+                        })
         
-        return spreadsheet, master_sheet, parcel_index
+        return spreadsheet, master_sheet, parcel_index, grantor_index
         
     except gspread.exceptions.WorksheetNotFound:
         # Create Master sheet if it doesn't exist
@@ -165,8 +182,47 @@ def process_daily_leads(daily_leads_file, client):
                         'activity_count': activity_count
                     })
         
+        elif matched_by_grantor:
+            # SAME GRANTOR, DIFFERENT PARCEL - Flag as related activity
+            matching_grantors = [g for g in grantors_in_lead if g in grantor_index]
+            related_parcels = []
+            
+            for grantor in matching_grantors:
+                for match in grantor_index[grantor]:
+                    related_parcels.append(match['record'].get('parcel_number'))
+            
+            # Add as new row but flag the relationship
+            new_row = [
+                "HOT",  # Auto-HOT because related to existing grantor
+                lead['document_count'],
+                parcel,
+                lead['property_address'],
+                lead['grantors'],
+                lead['grantees'],
+                lead['document_types'],
+                lead['recorded_dates'],
+                lead['document_numbers'],
+                timestamp,  # first_seen
+                timestamp,  # last_updated
+                1  # activity_count
+            ]
+            
+            master_sheet.append_row(new_row)
+            new_leads.append(lead)
+            
+            # HOT ALERT for related grantor activity
+            hot_alerts.append({
+                'parcel': parcel,
+                'address': lead['property_address'],
+                'document_count': int(lead['document_count']),
+                'document_types': lead['document_types'],
+                'activity_count': 1,
+                'related_grantors': matching_grantors,
+                'related_parcels': related_parcels
+            })
+        
         else:
-            # NEW PARCEL
+            # COMPLETELY NEW PARCEL AND GRANTOR
             new_row = [
                 lead['lead_score'],
                 lead['document_count'],
