@@ -26,5 +26,5 @@ RUN playwright install --with-deps chromium
 # Copy application code
 COPY . .
 
-# Run the scraper
-CMD ["python3", "-u", "cuyahoga_scraper_v3.py"]
+# Run health check server (allows manual triggering via HTTP)
+CMD ["python3", "-u", "healthcheck_server.py"]
