@@ -2,6 +2,7 @@
 """
 Cron wrapper that keeps the container alive
 Runs the scraper on schedule and sleeps between runs
+Updated: 2026-03-17 20:33 EST - Force redeploy
 """
 
 import schedule
