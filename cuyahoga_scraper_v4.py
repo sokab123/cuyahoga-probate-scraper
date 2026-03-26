@@ -24,6 +24,29 @@ DOCUMENT_TYPES = [
 
 BASE_URL = "https://cuyahoga.oh.publicsearch.us"
 
+# Keywords that indicate a company/institution (not an individual)
+COMPANY_KEYWORDS = [
+    ' LLC', ' INC', ' CORP', ' LP', ' LLP', ' LTD', ' CO ',
+    ' BANK', ' TRUST', ' TR ', ' TR$', ' NA ', 'N.A.',
+    ' MORTGAGE', ' FINANCIAL', ' FUND', ' FUNDING',
+    ' CAPITAL', ' SERVICING', ' REIT', ' PROPERTIES',
+    ' INVESTMENTS', ' REALTY', ' HOLDINGS', ' VENTURES',
+    ' ASSOCIATION', ' ASSOC', ' CHURCH', ' CITY OF',
+    ' COUNTY OF', ' STATE OF', ' ESTATE OF',
+    ' UNIVERSITY', ' SCHOOL', ' HOSPITAL', ' FOUNDATION',
+    ' DEPARTMENT', ' AUTHORITY', ' COMMISSION',
+]
+
+def is_company(name):
+    """Return True if the name looks like a company or institution, not an individual"""
+    if not name or name.strip() in ('', 'N/A', 'UNKNOWN'):
+        return False  # Unknown — let it through
+    name_upper = name.upper()
+    for keyword in COMPANY_KEYWORDS:
+        if keyword.upper() in name_upper:
+            return True
+    return False
+
 def dismiss_modal(page):
     """Dismiss any popups/modals"""
     try:
@@ -171,6 +194,10 @@ def scrape_document_type(page, doc_type, days_back=1):
                         if (not parcel_id or parcel_id == 'N/A') and property_address:
                             parcel_id = extract_parcel_from_text(property_address)
                         
+                        # Skip companies and institutions — individuals only
+                        if is_company(grantor):
+                            continue
+
                         record = {
                             'document_type': doc_type,
                             'grantor': grantor,
@@ -181,7 +208,13 @@ def scrape_document_type(page, doc_type, days_back=1):
                             'parcel_number': parcel_id if parcel_id != 'N/A' else '',
                             'property_address': property_address if property_address != 'N/A' else '',
                         }
-                        
+
+                        # Flag POA records with N/A grantor AND N/A grantee for separate tab
+                        grantor_na = grantor in ('', 'N/A')
+                        grantee_na = grantee in ('', 'N/A')
+                        if doc_type == 'Power of Attorney' and grantor_na and grantee_na:
+                            record['unknown_poa'] = True
+
                         page_records.append(record)
                         
                 except Exception as e:
@@ -196,32 +229,29 @@ def scrape_document_type(page, doc_type, days_back=1):
                 print(f"  ✅ Got all {total_results} results!")
                 break
             
-            # Try to find and click "Next Page" button
+            # Try to find and click "Next Page" button (▶ arrow with aria-label)
             try:
-                # Look for pagination controls
-                # Common selectors: button with "Next", arrow icon, page number + 1
-                next_button = page.locator('button:has-text("Next"), button[aria-label*="Next"], a:has-text("›"), a:has-text("Next")').first
+                next_button = page.locator('[aria-label*="next" i], [aria-label="▶"], button:has-text("▶")').first
                 
-                if next_button.is_visible(timeout=2000):
-                    # Save current page content to detect if navigation worked
-                    old_row_count = len(rows)
+                if next_button.is_visible(timeout=2000) and next_button.is_enabled():
+                    # Save first row content to detect if navigation worked
+                    first_row_text = rows[0].text_content() if rows else ''
                     
                     next_button.click()
-                    time.sleep(3)  # Wait for page to load
+                    time.sleep(3)
                     page.wait_for_load_state("networkidle", timeout=15000)
                     
                     # Check if content changed
                     new_rows = page.locator('table tbody tr').all()
+                    new_first_row = new_rows[0].text_content() if new_rows else ''
                     
-                    if len(new_rows) == 0 or len(new_rows) == old_row_count:
-                        # Check if the first row is the same (no new data)
-                        if len(new_rows) > 0 and new_rows[0].text_content() == rows[0].text_content():
-                            print("  ⏹  No more pages (content didn't change)")
-                            break
+                    if not new_rows or new_first_row == first_row_text:
+                        print("  ⏹  No more pages (content didn't change)")
+                        break
                     
                     page_num += 1
                 else:
-                    print("  ⏹  No next button found")
+                    print("  ⏹  No next button (end of results)")
                     break
                     
             except Exception as e:
@@ -334,6 +364,23 @@ def main():
     print(f"  💛 WARM leads (1 doc): {len(warm_leads)}")
     print(f"  📦 Total unique parcels: {len(scored_leads)}")
     
+    # Convert no-parcel records to same format for CSV inclusion
+    no_parcel_leads = []
+    for r in no_parcel_records:
+        no_parcel_leads.append({
+            'lead_score': 'NO PARCEL',
+            'document_count': 1,
+            'parcel_number': '',
+            'property_address': r.get('property_address', ''),
+            'grantors': r.get('grantor', ''),
+            'grantees': r.get('grantee', ''),
+            'document_types': r.get('document_type', ''),
+            'recorded_dates': r.get('recorded_date', ''),
+            'document_numbers': r.get('document_number', '')
+        })
+
+    all_leads = scored_leads + no_parcel_leads
+
     # Save to CSV
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     filename = f'cuyahoga_leads_{timestamp}.csv'
@@ -345,9 +392,9 @@ def main():
         ]
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
-        writer.writerows(scored_leads)
+        writer.writerows(all_leads)
     
-    print(f"\n✅ Saved {len(scored_leads)} leads to {filename}")
+    print(f"\n✅ Saved {len(all_leads)} leads to {filename} ({len(scored_leads)} with parcels, {len(no_parcel_leads)} without)")
     
     # Save all records (including no-parcel) to JSON for backup
     all_data = {
@@ -387,7 +434,13 @@ def main():
         print(f"  🆕 New leads: {len(new_leads)}")
         print(f"  🔄 Updated leads: {len(updated_leads)}")
         print(f"  🔥 Hot alerts: {len(hot_alerts)}")
-        
+
+        # Update Unknown POA tab
+        from smart_deduplication import update_unknown_poa_sheet
+        unknown_poa = [r for r in all_records if r.get('unknown_poa')]
+        spreadsheet = client.open("Cuyahoga Probate Leads")
+        update_unknown_poa_sheet(spreadsheet, unknown_poa)
+
         # Send email alert if configured
         if hot_alerts or updated_leads:
             from smart_deduplication import send_email_alert
